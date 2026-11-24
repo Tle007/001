@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ระบบเช็คชื่อเจ้าของถัง</title>
+    <!-- โหลด Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- โหลดฟอนต์ Prompt และ Inter สำหรับภาษาไทยและตัวเลขที่อ่านง่าย -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&family=Prompt:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Prompt', 'Inter', 'sans-serif'],
+                        num: ['Inter', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* ปรับแต่งการสัมผัสและป้องกันการไฮไลต์ข้อความเวลาแตะรัวๆ หน้างาน */
+        * {
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+        }
+        input {
+            user-select: text;
+        }
+        /* แอนิเมชันตอนการ์ดเปลี่ยนสถานะ */
+        .owner-card {
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .owner-card:active {
+            transform: scale(0.98);
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen pb-24 antialiased">
+
+    <!-- ส่วนหัวเว็บและแถบสถานะ (Sticky Header) -->
+    <header class="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-sm">
+        <div class="max-w-xl mx-auto px-4 pt-3 pb-3">
+            <!-- แถบชื่อแอปและตัวนับยอด -->
+            <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-sm shadow-blue-200">
+                        <!-- ไอคอนถัง/เช็กลิสต์ -->
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                        </svg>
+                    </div>
+                    <div>
+                        <h1 class="text-lg font-bold text-slate-900 leading-tight">เช็คชื่อเจ้าของถัง</h1>
+                        <p class="text-xs text-slate-500">แตะที่ชื่อเพื่อเช็คสถานะหน้างาน</p>
+                    </div>
+                </div>
+
+                <!-- ป้ายแสดงจำนวนที่เช็คแล้ว -->
+                <div class="flex items-center gap-2">
+                    <div class="bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl text-right">
+                        <span class="text-xs text-emerald-700 font-medium block leading-none mb-0.5">เช็คแล้ว</span>
+                        <span id="checked-counter" class="text-base font-extrabold text-emerald-600 font-num leading-none">0 / 10</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ช่องค้นหาด่วน (Quick Search) -->
+            <div class="relative">
+                <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                    <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                    </svg>
+                </div>
+                <input 
+                    type="text" 
+                    id="search-input" 
+                    inputmode="search"
+                    placeholder="พิมพ์เลขถัง (เช่น 1759, 848) หรือชื่อ..." 
+                    class="w-full pl-11 pr-11 py-3 bg-slate-100 border-2 border-transparent focus:bg-white focus:border-blue-500 rounded-2xl text-base font-medium text-slate-900 placeholder-slate-400 outline-none transition-all"
+                >
+                <!-- ปุ่มล้างคำค้นหา -->
+                <button 
+                    id="clear-search-btn" 
+                    type="button"
+                    class="hidden absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600"
+                    aria-label="ล้างคำค้นหา"
+                >
+                    <div class="w-7 h-7 rounded-full bg-slate-200 flex items-center justify-center">
+                        <svg class="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </div>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- พื้นที่เนื้อหาหลัก -->
+    <main class="max-w-xl mx-auto px-4 pt-4">
+        
+        <!-- กล่องแสดงผลการค้นหาเลขถังแบบเด่นชัด (แสดงเมื่อพิมพ์ค้นหาเลขถัง) -->
+        <div id="quick-result-banner" class="hidden mb-4"></div>
+
+        <!-- แถบเครื่องมือกรองสถานะและปุ่มรีเซ็ต -->
+        <div class="flex items-center justify-between gap-2 mb-3">
+            <!-- ปุ่มกรองดูรายการ -->
+            <div class="flex bg-slate-200/80 p-1 rounded-xl text-xs font-semibold">
+                <button type="button" data-filter="all" class="filter-btn active px-3 py-1.5 rounded-lg bg-white text-slate-900 shadow-sm transition-all">
+                    ทั้งหมด (10)
+                </button>
+                <button type="button" data-filter="unchecked" class="filter-btn px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 transition-all">
+                    ยังไม่เช็ค
+                </button>
+                <button type="button" data-filter="checked" class="filter-btn px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 transition-all">
+                    เช็คแล้ว
+                </button>
+            </div>
+
+            <!-- ปุ่มรีเซ็ตทั้งหมด -->
+            <button 
+                id="reset-all-btn" 
+                type="button"
+                class="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white border border-slate-200 text-rose-600 hover:bg-rose-50 active:bg-rose-100 text-xs font-semibold shadow-sm transition-colors"
+            >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                </svg>
+                รีเซ็ต
+            </button>
+        </div>
+
+        <!-- รายการการ์ดชื่อเจ้าของถังทั้ง 10 คน -->
+        <div id="owners-list" class="space-y-2.5">
+            <!-- สร้างด้วย JavaScript -->
+        </div>
+
+        <!-- กรณีค้นหาไม่พบ -->
+        <div id="empty-state" class="hidden text-center py-12 px-4 bg-white rounded-2xl border border-slate-200 mt-4">
+            <div class="w-14 h-14 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center mx-auto mb-3">
+                <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+            </div>
+            <p class="text-base font-bold text-slate-700">ไม่พบเลขถังหรือชื่อที่ค้นหา</p>
+            <p class="text-sm text-slate-500 mt-1">ลองตรวจสอบตัวเลขอีกครั้ง หรือกดล้างคำค้นหา</p>
+        </div>
+
+    </main>
+
+    <!-- กล่องยืนยันการรีเซ็ต (Custom Modal แทน confirm()) -->
+    <div id="reset-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
+        <div class="bg-white rounded-3xl max-w-sm w-full p-6 shadow-xl border border-slate-100 transform transition-all">
+            <div class="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mb-4">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                </svg>
+            </div>
+            <h3 class="text-lg font-bold text-slate-900">ล้างการเช็คชื่อทั้งหมด?</h3>
+            <p class="text-sm text-slate-600 mt-1.5">สถานะเช็คชื่อของเจ้าของถังทั้ง 10 คนจะถูกรีเซ็ตกลับเป็น "ยังไม่เช็ค"</p>
+            <div class="grid grid-cols-2 gap-3 mt-6">
+                <button id="cancel-reset-btn" type="button" class="py-3 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-sm transition-colors">
+                    ยกเลิก
+                </button>
+                <button id="confirm-reset-btn" type="button" class="py-3 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold text-sm shadow-sm shadow-rose-200 transition-colors">
+                    ยืนยันรีเซ็ต
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- แถบแจ้งเตือนสั้นๆ ด้านล่าง (Toast Notification) -->
+    <div id="toast" class="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 pointer-events-none opacity-0 transition-opacity duration-200">
+        <div id="toast-content" class="bg-slate-900/90 text-white px-4 py-2.5 rounded-full text-sm font-medium shadow-lg backdrop-blur-sm flex items-center gap-2 whitespace-nowrap">
+            <!-- ข้อความแจ้งเตือน -->
+        </div>
+    </div>
+
+    <script>
+        // ข้อมูลเจ้าของถังทั้ง 10 คน (อัปเดตล่าสุดครบถ้วน)
+        const TANK_OWNERS = [
+            { id: 1, name: "ตาเขียว", tanks: ["1831", "2082"] },
+            { id: 2, name: "หมอ", tanks: ["8064", "8089"] },
+            { id: 3, name: "ตาเสริฐ", tanks: ["282", "482", "605", "613", "767", "771", "1628", "2081", "2310", "7002"] },
+            { id: 4, name: "จิว", tanks: ["22", "227", "1251", "1307", "2110", "2111"] },
+            { id: 5, name: "ดาว", tanks: ["231", "802", "828", "1511", "1636", "1740", "2129", "2282", "8087"] },
+            { id: 6, name: "น้องชมพู่", tanks: ["62", "77", "699", "886", "1255", "1327", "1333", "1395", "2007", "2050", "2143", "2302"] },
+            { id: 7, name: "ตังค์", tanks: ["152", "840", "1741", "1950", "2130"] },
+            { id: 8, name: "พี่คิม", tanks: ["142", "144", "206", "352", "409", "619", "855", "885", "894", "1109", "1253", "1356", "1605", "1752", "1947", "2090", "2092", "2104"] },
+            { id: 9, name: "พี่โหน่ง", tanks: ["014", "623", "1459", "1592", "1595", "1597", "1754", "1759", "1778", "1882", "2144", "2288", "2289", "2297", "2316"] },
+            { id: 10, name: "ตามิตร", tanks: ["47", "295", "848", "1007", "1166", "1247", "1335", "1650", "1767", "1898", "8081", "8088"] }
+        ];
+
+        // สถานะแอปพลิเคชัน
+        let checkedIds = new Set();
+        let expandedIds = new Set();
+        let currentFilter = 'all'; // 'all' | 'unchecked' | 'checked'
+        let searchQuery = '';
+        let toastTimeout = null;
+
+        // โหลดสถานะการเช็คชื่อจาก LocalStorage (ป้องกันข้อมูลหายเมื่อรีเฟรชหน้าเว็บ)
+        function loadState() {
+            try {
+                const saved = localStorage.getItem('tank_owner_checked_v1');
+                if (saved) {
+                    const parsed = JSON.parse(saved);
+                    if (Array.isArray(parsed)) {
+                        checkedIds = new Set(parsed);
+                    }
+                }
+            } catch (e) {
+                console.error('ไม่สามารถโหลดข้อมูลที่บันทึกไว้ได้:', e);
+            }
+        }
+
+        // บันทึกสถานะการเช็คชื่อลง LocalStorage
+        function saveState() {
+            try {
+                localStorage.setItem('tank_owner_checked_v1', JSON.stringify([...checkedIds]));
+            } catch (e) {
+                console.error('ไม่สามารถบันทึกข้อมูลได้:', e);
+            }
+        }
+
+        // แสดงข้อความแจ้งเตือนสั้นๆ ด้านล่าง
+        function showToast(message, isSuccess = true) {
+            const toast = document.getElementById('toast');
+            const content = document.getElementById('toast-content');
+            
+            content.innerHTML = isSuccess 
+                ? `<span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span><span>${message}</span>`
+                : `<span class="w-2.5 h-2.5 rounded-full bg-slate-400"></span><span>${message}</span>`;
+
+            toast.classList.remove('opacity-0');
+            toast.classList.add('opacity-100');
+
+            clearTimeout(toastTimeout);
+            toastTimeout = setTimeout(() => {
+                toast.classList.remove('opacity-100');
+                toast.classList.add('opacity-0');
+            }, 1800);
+        }
+
+        // สลับสถานะเช็คชื่อ (เช็คแล้ว <-> ยังไม่เช็ค)
+        function toggleCheck(id) {
+            const owner = TANK_OWNERS.find(o => o.id === id);
+            if (!owner) return;
+
+            if (checkedIds.has(id)) {
+                checkedIds.delete(id);
+                showToast(`ยกเลิกเช็คชื่อ: ${owner.name}`, false);
+            } else {
+                checkedIds.add(id);
+                showToast(`เช็คชื่อแล้ว: ${owner.name}`, true);
+            }
+            
+            saveState();
+            render();
+        }
+
+        // เปิด/ปิด ดูเลขถังของแต่ละคน
+        function toggleExpand(id, event) {
+            event.stopPropagation(); // ไม่ให้ไปโดนปุ่มเช็คชื่อหลัก
+            if (expandedIds.has(id)) {
+                expandedIds.delete(id);
+            } else {
+                expandedIds.add(id);
+            }
+            render();
+        }
+
+        // อัปเดตตัวนับจำนวนด้านบน
+        function updateCounter() {
+            const counterEl = document.getElementById('checked-counter');
+            counterEl.textContent = `${checkedIds.size} / ${TANK_OWNERS.length}`;
+        }
+
+        // สร้างแบนเนอร์ผลลัพธ์ด่วนเมื่อค้นหาด้วยเลขถัง
+        function renderQuickBanner(query) {
+            const bannerEl = document.getElementById('quick-result-banner');
+            const cleanQuery = query.trim();
+
+            // แสดงแบนเนอร์เฉพาะเมื่อพิมพ์ตัวเลข
+            if (!cleanQuery || !/^\d+$/.test(cleanQuery)) {
+                bannerEl.classList.add('hidden');
+                bannerEl.innerHTML = '';
+                return;
+            }
+
+            // หาเจ้าของที่เลขถังตรงเป๊ะ หรือขึ้นต้นด้วยเลขที่พิมพ์
+            const exactMatches = TANK_OWNERS.filter(o => o.tanks.includes(cleanQuery));
+            const partialMatches = TANK_OWNERS.filter(o => 
+                !o.tanks.includes(cleanQuery) && o.tanks.some(t => t.startsWith(cleanQuery))
+            );
+
+            if (exactMatches.length === 1) {
+                const owner = exactMatches[0];
+                const isChecked = checkedIds.has(owner.id);
+                bannerEl.classList.remove('hidden');
+                bannerEl.innerHTML = `
+                    <div class="bg-blue-600 text-white rounded-2xl p-4 shadow-md shadow-blue-200 flex items-center justify-between gap-3">
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <span class="bg-blue-500/80 text-blue-50 text-xs font-bold px-2.5 py-0.5 rounded-lg font-num">เลขถัง ${cleanQuery}</span>
+                                <span class="text-xs text-blue-100">เจ้าของคือ</span>
+                            </div>
+                            <div class="text-2xl font-bold mt-1 tracking-tight">${owner.name}</div>
+                        </div>
+                        <button 
+                            type="button" 
+                            onclick="toggleCheck(${owner.id})"
+                            class="px-4 py-3 rounded-xl font-bold text-sm shadow-sm transition-all flex items-center gap-1.5 shrink-0 ${
+                                isChecked 
+                                ? 'bg-emerald-500 text-white hover:bg-emerald-600' 
+                                : 'bg-white text-blue-700 hover:bg-blue-50 active:scale-95'
+                            }"
+                        >
+                            ${isChecked 
+                                ? `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg> เช็คแล้ว`
+                                : `เช็คชื่อเลย`
+                            }
+                        </button>
+                    </div>
+                `;
+            } else if (exactMatches.length === 0 && partialMatches.length > 0) {
+                bannerEl.classList.remove('hidden');
+                bannerEl.innerHTML = `
+                    <div class="bg-blue-50 border border-blue-200 text-blue-900 rounded-2xl px-4 py-3 text-sm flex items-center justify-between">
+                        <span>พบเลขที่ขึ้นต้นด้วย <strong class="font-num">${cleanQuery}</strong> ในรายชื่อด้านล่าง (${partialMatches.length} คน)</span>
+                    </div>
+                `;
+            } else {
+                bannerEl.classList.add('hidden');
+                bannerEl.innerHTML = '';
+            }
+        }
+
+        // เรนเดอร์รายการเจ้าของถังทั้งหมด
+        function render() {
+            updateCounter();
+            renderQuickBanner(searchQuery);
+
+            const listEl = document.getElementById('owners-list');
+            const emptyEl = document.getElementById('empty-state');
+            const cleanQuery = searchQuery.trim().toLowerCase();
+
+            // กรองข้อมูลตามคำค้นหาและแถบสถานะ
+            const filteredOwners = TANK_OWNERS.filter(owner => {
+                const isChecked = checkedIds.has(owner.id);
+
+                // กรองตามแท็บสถานะ (เฉพาะตอนไม่ได้พิมพ์ค้นหา)
+                if (!cleanQuery) {
+                    if (currentFilter === 'checked' && !isChecked) return false;
+                    if (currentFilter === 'unchecked' && isChecked) return false;
+                }
+
+                // กรองตามคำค้นหา (ชื่อ หรือ เลขถัง)
+                if (cleanQuery) {
+                    const matchName = owner.name.toLowerCase().includes(cleanQuery);
+                    const matchTank = owner.tanks.some(t => t.includes(cleanQuery));
+                    return matchName || matchTank;
+                }
+
+                return true;
+            });
+
+            if (filteredOwners.length === 0) {
+                listEl.innerHTML = '';
+                emptyEl.classList.remove('hidden');
+                return;
+            }
+
+            emptyEl.classList.add('hidden');
+
+            listEl.innerHTML = filteredOwners.map(owner => {
+                const isChecked = checkedIds.has(owner.id);
+                // ถ้าค้นหาเลขถังเจอในคนนี้ ให้เปิดโชว์เลขถังอัตโนมัติเพื่อความชัดเจน
+                const matchedTanks = cleanQuery && /^\d+$/.test(cleanQuery) 
+                    ? owner.tanks.filter(t => t.includes(cleanQuery)) 
+                    : [];
+                const isExpanded = expandedIds.has(owner.id) || matchedTanks.length > 0;
+
+                // สไตล์การ์ดตามสถานะ เช็คแล้ว vs ยังไม่เช็ค
+                const cardClasses = isChecked
+                    ? 'bg-emerald-50/90 border-emerald-400 shadow-sm'
+                    : 'bg-white border-slate-200 hover:border-blue-300 shadow-xs';
+
+                const checkboxClasses = isChecked
+                    ? 'bg-emerald-500 border-emerald-500 text-white scale-105'
+                    : 'bg-slate-50 border-slate-300 text-transparent';
+
+                const nameClasses = isChecked
+                    ? 'text-emerald-950'
+                    : 'text-slate-900';
+
+                return `
+                    <div class="owner-card rounded-2xl border-2 overflow-hidden ${cardClasses}">
+                        <!-- พื้นที่หลักสำหรับแตะเช็คชื่อ (ปุ่มกดขนาดใหญ่) -->
+                        <div 
+                            onclick="toggleCheck(${owner.id})"
+                            role="button"
+                            tabindex="0"
+                            aria-pressed="${isChecked}"
+                            class="p-4 flex items-center justify-between gap-3 cursor-pointer"
+                        >
+                            <div class="flex items-center gap-3.5 min-w-0">
+                                <!-- กล่องติ๊กถูกขนาดใหญ่ -->
+                                <div class="w-9 h-9 rounded-xl border-2 flex items-center justify-center shrink-0 transition-all ${checkboxClasses}">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path>
+                                    </svg>
+                                </div>
+
+                                <!-- ชื่อเจ้าของถังตัวใหญ่ชัดเจน -->
+                                <div class="min-w-0">
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-xl font-bold truncate ${nameClasses}">${owner.name}</span>
+                                        ${isChecked 
+                                            ? `<span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-bold bg-emerald-200/80 text-emerald-800 shrink-0">เช็คแล้ว</span>` 
+                                            : ''
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- ปุ่มกดดูเลขถัง (แยกส่วนเพื่อไม่ให้รกตา) -->
+                            <button 
+                                type="button"
+                                onclick="toggleExpand(${owner.id}, event)"
+                                class="px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1 shrink-0 transition-colors ${
+                                    isChecked 
+                                    ? 'bg-emerald-100/80 text-emerald-800 hover:bg-emerald-200/70' 
+                                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                }"
+                                aria-label="ดูเลขถังของ ${owner.name}"
+                            >
+                                <span>เลขถัง (${owner.tanks.length})</span>
+                                <svg class="w-4 h-4 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M19 9l-7 7-7-7"></path>
+                                </svg>
+                            </button>
+                        </div>
+
+                        <!-- ลิ้นชักแสดงรายการเลขถัง (ซ่อนไว้เป็นค่าเริ่มต้นเพื่อให้หน้าหลักมีแต่ชื่อสะอาดตา) -->
+                        ${isExpanded ? `
+                            <div class="px-4 pb-4 pt-2 border-t ${isChecked ? 'border-emerald-200/70 bg-emerald-100/30' : 'border-slate-100 bg-slate-50/70'}">
+                                <div class="flex flex-wrap gap-1.5">
+                                    ${owner.tanks.map(tank => {
+                                        const isHighlighted = cleanQuery && tank.includes(cleanQuery);
+                                        return `
+                                            <span class="px-2.5 py-1 rounded-lg text-sm font-bold font-num ${
+                                                isHighlighted 
+                                                ? 'bg-blue-600 text-white ring-2 ring-blue-300 shadow-xs' 
+                                                : isChecked 
+                                                    ? 'bg-white text-emerald-900 border border-emerald-200' 
+                                                    : 'bg-white text-slate-700 border border-slate-200'
+                                            }">
+                                                ${tank}
+                                            </span>
+                                        `;
+                                    }).join('')}
+                                </div>
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // ตั้งค่า Event Listeners เมื่อโหลดหน้าเว็บเสร็จ
+        document.addEventListener('DOMContentLoaded', () => {
+            loadState();
+            render();
+
+            const searchInput = document.getElementById('search-input');
+            const clearSearchBtn = document.getElementById('clear-search-btn');
+            const filterBtns = document.querySelectorAll('.filter-btn');
+            const resetAllBtn = document.getElementById('reset-all-btn');
+            const resetModal = document.getElementById('reset-modal');
+            const cancelResetBtn = document.getElementById('cancel-reset-btn');
+            const confirmResetBtn = document.getElementById('confirm-reset-btn');
+
+            // การพิมพ์ค้นหา
+            searchInput.addEventListener('input', (e) => {
+                searchQuery = e.target.value;
+                if (searchQuery.length > 0) {
+                    clearSearchBtn.classList.remove('hidden');
+                } else {
+                    clearSearchBtn.classList.add('hidden');
+                }
+                render();
+            });
+
+            // ปุ่มล้างคำค้นหา
+            clearSearchBtn.addEventListener('click', () => {
+                searchQuery = '';
+                searchInput.value = '';
+                clearSearchBtn.classList.add('hidden');
+                searchInput.focus();
+                render();
+            });
+
+            // ปุ่มกรองสถานะ (ทั้งหมด / ยังไม่เช็ค / เช็คแล้ว)
+            filterBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    currentFilter = btn.dataset.filter;
+                    
+                    // อัปเดตสไตล์ปุ่มแท็บ
+                    filterBtns.forEach(b => {
+                        b.classList.remove('bg-white', 'text-slate-900', 'shadow-sm');
+                        b.classList.add('text-slate-600');
+                    });
+                    btn.classList.add('bg-white', 'text-slate-900', 'shadow-sm');
+                    btn.classList.remove('text-slate-600');
+
+                    render();
+                });
+            });
+
+            // เปิดกล่องยืนยันการรีเซ็ต
+            resetAllBtn.addEventListener('click', () => {
+                if (checkedIds.size === 0) {
+                    showToast('ยังไม่มีรายชื่อที่ถูกเช็ค', false);
+                    return;
+                }
+                resetModal.classList.remove('hidden');
+            });
+
+            // ปิดกล่องยืนยันการรีเซ็ต
+            cancelResetBtn.addEventListener('click', () => {
+                resetModal.classList.add('hidden');
+            });
+
+            // ยืนยันรีเซ็ตทั้งหมด
+            confirmResetBtn.addEventListener('click', () => {
+                checkedIds.clear();
+                saveState();
+                resetModal.classList.add('hidden');
+                showToast('รีเซ็ตสถานะทั้งหมดเรียบร้อย', false);
+                render();
+            });
+
+            // แตะพื้นหลังเพื่อปิด Modal
+            resetModal.addEventListener('click', (e) => {
+                if (e.target === resetModal) {
+                    resetModal.classList.add('hidden');
+                }
+            });
+        });
+    </script>
+</body>
+</html>
