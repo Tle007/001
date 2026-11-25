@@ -71,7 +71,7 @@
             </div>
 
             <!-- ช่องค้นหาด่วน (Quick Search) -->
-            <div class="relative">
+            <div id="search-wrap" class="relative">
                 <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
                     <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
@@ -102,7 +102,7 @@
     </header>
 
     <!-- พื้นที่เนื้อหาหลัก -->
-    <main class="max-w-xl mx-auto px-4 pt-4">
+    <main id="page-check" class="max-w-xl mx-auto px-4 pt-4">
         
         <!-- กล่องแสดงผลการค้นหาเลขถังแบบเด่นชัด (แสดงเมื่อพิมพ์ค้นหาเลขถัง) -->
         <div id="quick-result-banner" class="hidden mb-4"></div>
@@ -153,6 +153,59 @@
 
     </main>
 
+    <!-- หน้านับเวลาสาร -->
+    <main id="page-timer" class="hidden max-w-xl mx-auto px-4 pt-4 space-y-3">
+        <div class="bg-white rounded-2xl border-2 border-slate-200 p-4 space-y-4">
+            <div>
+                <label class="text-sm font-semibold text-slate-600">ถัง / ชื่อ (ไม่ใส่ก็ได้)</label>
+                <input id="t-label" type="text" placeholder="เช่น 1759 หรือ พี่โหน่ง" class="mt-1 w-full px-4 py-3 bg-slate-100 border-2 border-transparent focus:bg-white focus:border-blue-500 rounded-xl text-base font-medium outline-none">
+            </div>
+            <div>
+                <label class="text-sm font-semibold text-slate-600">เวลาใส่สาร</label>
+                <div class="mt-1 flex gap-2">
+                    <input id="t-start" type="time" class="flex-1 min-w-0 px-4 py-3 bg-slate-100 border-2 border-transparent focus:bg-white focus:border-blue-500 rounded-xl text-2xl font-bold font-num outline-none">
+                    <button type="button" data-now="t-start" class="now-btn px-4 rounded-xl bg-blue-50 text-blue-700 font-semibold text-sm active:bg-blue-100">ตอนนี้</button>
+                </div>
+            </div>
+            <div>
+                <label class="text-sm font-semibold text-slate-600">เวลาเอาออก</label>
+                <div class="mt-1 flex gap-2">
+                    <input id="t-end" type="time" class="flex-1 min-w-0 px-4 py-3 bg-slate-100 border-2 border-transparent focus:bg-white focus:border-blue-500 rounded-xl text-2xl font-bold font-num outline-none">
+                    <button type="button" data-now="t-end" class="now-btn px-4 rounded-xl bg-blue-50 text-blue-700 font-semibold text-sm active:bg-blue-100">ตอนนี้</button>
+                </div>
+            </div>
+            <div id="t-result" class="rounded-2xl bg-slate-100 text-slate-500 p-4 text-center">
+                ใส่เวลาให้ครบทั้ง 2 ช่อง
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+                <button id="t-clear" type="button" class="py-3 rounded-xl bg-slate-100 text-slate-700 font-semibold text-sm active:bg-slate-200">ล้าง</button>
+                <button id="t-save" type="button" class="py-3 rounded-xl bg-blue-600 text-white font-semibold text-sm active:bg-blue-700">บันทึก</button>
+            </div>
+        </div>
+
+        <div>
+            <div class="flex items-center justify-between mb-2 px-1">
+                <h2 class="text-base font-bold text-slate-800">ประวัติที่บันทึก</h2>
+                <button id="t-clear-history" type="button" class="text-xs font-semibold text-rose-600">ลบทั้งหมด</button>
+            </div>
+            <div id="t-history" class="space-y-2"></div>
+        </div>
+    </main>
+
+    <!-- แถบเมนูด้านล่าง -->
+    <nav class="fixed bottom-0 inset-x-0 z-30 bg-white border-t border-slate-200">
+        <div class="max-w-xl mx-auto grid grid-cols-2">
+            <button type="button" data-page="check" class="tab-btn py-3 flex flex-col items-center gap-0.5 text-blue-600">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
+                <span class="text-xs font-semibold">เช็คชื่อ</span>
+            </button>
+            <button type="button" data-page="timer" class="tab-btn py-3 flex flex-col items-center gap-0.5 text-slate-400">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                <span class="text-xs font-semibold">นับเวลาสาร</span>
+            </button>
+        </div>
+    </nav>
+
     <!-- กล่องยืนยันการรีเซ็ต (Custom Modal แทน confirm()) -->
     <div id="reset-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
         <div class="bg-white rounded-3xl max-w-sm w-full p-6 shadow-xl border border-slate-100 transform transition-all">
@@ -175,7 +228,7 @@
     </div>
 
     <!-- แถบแจ้งเตือนสั้นๆ ด้านล่าง (Toast Notification) -->
-    <div id="toast" class="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 pointer-events-none opacity-0 transition-opacity duration-200">
+    <div id="toast" class="fixed bottom-24 left-1/2 -translate-x-1/2 z-40 pointer-events-none opacity-0 transition-opacity duration-200">
         <div id="toast-content" class="bg-slate-900/90 text-white px-4 py-2.5 rounded-full text-sm font-medium shadow-lg backdrop-blur-sm flex items-center gap-2 whitespace-nowrap">
             <!-- ข้อความแจ้งเตือน -->
         </div>
@@ -472,10 +525,160 @@
             }).join('');
         }
 
+        // ===== นับเวลาสาร =====
+        const HISTORY_KEY = 'chem_timer_history_v1';
+        let timerHistory = [];
+
+        function toMinutes(hhmm) {
+            if (!hhmm) return null;
+            const [h, m] = hhmm.split(':').map(Number);
+            return h * 60 + m;
+        }
+
+        // คืนค่าจำนวนนาที (ถ้าเวลาออกน้อยกว่าเวลาเข้า = ข้ามคืน บวก 24 ชม.)
+        function diffMinutes(start, end) {
+            const s = toMinutes(start), e = toMinutes(end);
+            if (s === null || e === null) return null;
+            let d = e - s;
+            if (d < 0) d += 24 * 60;
+            return d;
+        }
+
+        function formatDuration(mins) {
+            const h = Math.floor(mins / 60), m = mins % 60;
+            if (h === 0) return `${m} นาที`;
+            if (m === 0) return `${h} ชั่วโมง`;
+            return `${h} ชั่วโมง ${m} นาที`;
+        }
+
+        function escapeHtml(s) {
+            return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        }
+
+        function nowHHMM() {
+            const d = new Date();
+            return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+        }
+
+        function renderTimerResult() {
+            const start = document.getElementById('t-start').value;
+            const end = document.getElementById('t-end').value;
+            const el = document.getElementById('t-result');
+            const mins = diffMinutes(start, end);
+            if (mins === null) {
+                el.className = 'rounded-2xl bg-slate-100 text-slate-500 p-4 text-center';
+                el.innerHTML = 'ใส่เวลาให้ครบทั้ง 2 ช่อง';
+                return;
+            }
+            const overnight = toMinutes(end) < toMinutes(start);
+            el.className = 'rounded-2xl bg-blue-600 text-white p-4 text-center shadow-md shadow-blue-200';
+            el.innerHTML = `
+                <div class="text-sm text-blue-100">ใช้เวลาทั้งหมด</div>
+                <div class="text-3xl font-extrabold mt-1">${formatDuration(mins)}</div>
+                <div class="text-sm text-blue-100 mt-1 font-num">= ${(mins / 60).toFixed(2)} ชม.${overnight ? ' (ข้ามคืน)' : ''}</div>
+            `;
+        }
+
+        function loadHistory() {
+            try {
+                const saved = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+                if (Array.isArray(saved)) timerHistory = saved;
+            } catch (e) { timerHistory = []; }
+        }
+
+        function saveHistory() {
+            try { localStorage.setItem(HISTORY_KEY, JSON.stringify(timerHistory)); } catch (e) {}
+        }
+
+        function renderHistory() {
+            const el = document.getElementById('t-history');
+            if (timerHistory.length === 0) {
+                el.innerHTML = `<div class="text-center text-sm text-slate-400 py-6 bg-white rounded-2xl border border-slate-200">ยังไม่มีประวัติ</div>`;
+                return;
+            }
+            el.innerHTML = timerHistory.map((r, i) => `
+                <div class="bg-white rounded-2xl border-2 border-slate-200 px-4 py-3 flex items-center justify-between gap-3">
+                    <div class="min-w-0">
+                        <div class="font-bold text-slate-900 truncate">${r.label ? escapeHtml(r.label) : 'ไม่ระบุ'}</div>
+                        <div class="text-sm text-slate-500 font-num">${r.start} → ${r.end} · ${r.date}</div>
+                    </div>
+                    <div class="flex items-center gap-2 shrink-0">
+                        <span class="text-base font-extrabold text-blue-700">${formatDuration(r.mins)}</span>
+                        <button type="button" onclick="deleteHistory(${i})" class="w-8 h-8 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center" aria-label="ลบ">✕</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function deleteHistory(i) {
+            timerHistory.splice(i, 1);
+            saveHistory();
+            renderHistory();
+        }
+
+        function switchPage(page) {
+            const isCheck = page === 'check';
+            document.getElementById('page-check').classList.toggle('hidden', !isCheck);
+            document.getElementById('page-timer').classList.toggle('hidden', isCheck);
+            document.getElementById('search-wrap').classList.toggle('hidden', !isCheck);
+            document.querySelectorAll('.tab-btn').forEach(b => {
+                const active = b.dataset.page === page;
+                b.classList.toggle('text-blue-600', active);
+                b.classList.toggle('text-slate-400', !active);
+            });
+            window.scrollTo(0, 0);
+        }
+
         // ตั้งค่า Event Listeners เมื่อโหลดหน้าเว็บเสร็จ
         document.addEventListener('DOMContentLoaded', () => {
             loadState();
             render();
+
+            // เมนูด้านล่าง + หน้านับเวลาสาร
+            loadHistory();
+            renderHistory();
+            document.querySelectorAll('.tab-btn').forEach(b => b.addEventListener('click', () => switchPage(b.dataset.page)));
+            ['t-start', 't-end'].forEach(id => document.getElementById(id).addEventListener('input', renderTimerResult));
+            document.querySelectorAll('.now-btn').forEach(b => b.addEventListener('click', () => {
+                document.getElementById(b.dataset.now).value = nowHHMM();
+                renderTimerResult();
+            }));
+            document.getElementById('t-clear').addEventListener('click', () => {
+                ['t-label', 't-start', 't-end'].forEach(id => document.getElementById(id).value = '');
+                renderTimerResult();
+            });
+            document.getElementById('t-save').addEventListener('click', () => {
+                const start = document.getElementById('t-start').value;
+                const end = document.getElementById('t-end').value;
+                const mins = diffMinutes(start, end);
+                if (mins === null) { showToast('ใส่เวลาให้ครบก่อนบันทึก', false); return; }
+                const d = new Date();
+                timerHistory.unshift({
+                    label: document.getElementById('t-label').value.trim(),
+                    start, end, mins,
+                    date: `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear() + 543}`
+                });
+                if (timerHistory.length > 100) timerHistory.length = 100;
+                saveHistory();
+                renderHistory();
+                showToast(`บันทึกแล้ว: ${formatDuration(mins)}`, true);
+            });
+            let confirmClearTimer = null;
+            const clearHistBtn = document.getElementById('t-clear-history');
+            clearHistBtn.addEventListener('click', () => {
+                if (timerHistory.length === 0) return;
+                if (!confirmClearTimer) {
+                    clearHistBtn.textContent = 'แตะอีกครั้งเพื่อยืนยัน';
+                    confirmClearTimer = setTimeout(() => { clearHistBtn.textContent = 'ลบทั้งหมด'; confirmClearTimer = null; }, 3000);
+                    return;
+                }
+                clearTimeout(confirmClearTimer); confirmClearTimer = null;
+                clearHistBtn.textContent = 'ลบทั้งหมด';
+                timerHistory = [];
+                saveHistory();
+                renderHistory();
+                showToast('ลบประวัติทั้งหมดแล้ว', false);
+            });
 
             const searchInput = document.getElementById('search-input');
             const clearSearchBtn = document.getElementById('clear-search-btn');
