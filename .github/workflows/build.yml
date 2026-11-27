@@ -1,0 +1,27 @@
+name: Build MP3 Converter APK
+on: [push, workflow_dispatch]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17' }
+      - uses: gradle/actions/setup-gradle@v4
+        with: { gradle-version: '8.9' }
+      - name: Get LAME MP3 encoder source
+        run: |
+          curl -fL --retry 3 -o lame.tgz https://downloads.sourceforge.net/project/lame/lame/3.100/lame-3.100.tar.gz
+          tar xzf lame.tgz
+          mkdir -p app/src/main/cpp/lame
+          cp -r lame-3.100/libmp3lame lame-3.100/include app/src/main/cpp/lame/
+          sed -i 's/extern ieee754_float32_t fast_log2(ieee754_float32_t x);/extern float fast_log2(float x);/' app/src/main/cpp/lame/libmp3lame/util.h
+      - name: Build
+        run: gradle assembleDebug --console=plain 2>&1 | tee build.log
+      - name: Report errors
+        if: failure()
+        run: |
+          msg=$(grep -E "error:|error |FAILED|What went wrong|Exception" -A2 build.log | head -40 | sed -e 's/%/%25/g' -e 's/\r//g' | sed ':a;N;$!ba;s/\n/%0A/g')
+          echo "::error title=BuildLog::${msg:-no matching lines}"
+      - uses: actions/upload-artifact@v4
+        with: { name: MP3-Converter-apk, path: app/build/outputs/apk/debug/*.apk }
