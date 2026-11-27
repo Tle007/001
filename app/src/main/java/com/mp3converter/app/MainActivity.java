@@ -440,7 +440,7 @@ public class MainActivity extends Activity {
             for (int i = 0; i < queue.size(); i++) {
                 if (Converter.cancelled) break;
                 final Uri src = queue.get(i);
-                final String name = new java.text.SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(new java.util.Date()) + ".mp3";
+                final String name = timeName() + ".mp3";
                 final String head = (queue.size() > 1 ? "ไฟล์ " + (i + 1) + "/" + queue.size() + " · " : "") + name;
                 runOnUiThread(() -> { statusText.setText("กำลังแปลง: " + head + "\n0%"); progressBar.setProgress(0); });
                 try {
@@ -570,6 +570,15 @@ public class MainActivity extends Activity {
         int dot = name.lastIndexOf('.');
         if (dot > 0) name = name.substring(0, dot);
         return name.replaceAll("[\\\\/:*?\"<>|]", "_");
+    }
+
+    /** ชื่อไฟล์แบบอ่านง่าย: เวลาขึ้นก่อน เช่น "14.35น. 27-11-2569" */
+    private String timeName() {
+        java.util.Calendar c = java.util.Calendar.getInstance();
+        return String.format(Locale.US, "%02d.%02dน. %02d-%02d-%d",
+                c.get(java.util.Calendar.HOUR_OF_DAY), c.get(java.util.Calendar.MINUTE),
+                c.get(java.util.Calendar.DAY_OF_MONTH), c.get(java.util.Calendar.MONTH) + 1,
+                c.get(java.util.Calendar.YEAR) + 543);
     }
 
     // ---------- อ่าน SRT เป็นเสียง ----------
