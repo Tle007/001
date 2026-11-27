@@ -29,6 +29,7 @@ final class SrtSpeech {
     static final class Cue {
         long startMs, endMs;
         String text;
+        float rateMul = 1f, pitchMul = 1f;
     }
 
     private SrtSpeech() {}
@@ -113,6 +114,61 @@ final class SrtSpeech {
                 + Long.parseLong(m.group(g + 2)) * 1000L + Long.parseLong(frac);
     }
 
+    // ---------- อารมณ์ ----------
+    private static final Pattern TH_QUESTION = Pattern.compile(
+            ".*(ไหม|มั้ย|หรือเปล่า|รึเปล่า|หรือไม่|เหรอ|หรอ|ล่ะ|ไง|อะไร|ทำไม|ใคร|ที่ไหน|เมื่อไหร่|ยังไง|อย่างไร|กี่\\S*)\\s*(ครับ|คะ|ค่ะ|นะ|จ๊ะ|จ้ะ|วะ|เนี่ย|เนี้ย)?\\s*\\?*\\s*$");
+    private static final Pattern TH_EXCITED = Pattern.compile(
+            ".*(ว้าว|โอ้โห|โห|เย้|สุดยอด|ตายแล้ว|ตายละ|เฮ้ย|อุ๊ย|อ้าว|เยี่ยม|ไชโย|กรี๊ด|แย่แล้ว).*");
+
+    /** กำหนดความเร็ว/โทนเสียงของบรรทัดตามอารมณ์ของประโยค */
+    static void applyEmotion(Cue c, boolean thai) {
+        String t = c.text.trim();
+        if (t.contains("!") || (thai && TH_EXCITED.matcher(t).matches())) {
+            c.rateMul = 1.08f; c.pitchMul = 1.15f;           // ตื่นเต้น / ตกใจ
+        } else if (t.endsWith("?") || (thai && TH_QUESTION.matcher(t).matches())) {
+            c.rateMul = 1.0f; c.pitchMul = 1.12f;            // คำถาม เสียงสูงขึ้น
+        } else if (t.contains("...") || t.contains("…")) {
+            c.rateMul = 0.88f; c.pitchMul = 0.95f;           // ลังเล / ช้าลง
+        }
+    }
+
+    // ---------- ปรับข้อความให้อ่านถูก ----------
+    static List<String[]> parseDictionary(String s) {
+        List<String[]> out = new ArrayList<>();
+        if (s == null) return out;
+        for (String line : s.split("\n")) {
+            int eq = line.indexOf('=');
+            if (eq <= 0) continue;
+            String from = line.substring(0, eq).trim(), to = line.substring(eq + 1).trim();
+            if (!from.isEmpty()) out.add(new String[]{from, to});
+        }
+        Collections.sort(out, (a, b) -> b[0].length() - a[0].length()); // คำยาวก่อน
+        return out;
+    }
+
+    static String normalize(String t, boolean thai, List<String[]> dict) {
+        for (String[] d : dict) {
+            t = Pattern.compile(Pattern.quote(d[0]), Pattern.CASE_INSENSITIVE)
+                    .matcher(t).replaceAll(Matcher.quoteReplacement(" " + d[1] + " "));
+        }
+        // ลบอีโมจิและสัญลักษณ์เพลง
+        t = t.replaceAll("[\\x{1F000}-\\x{1FAFF}\\x{2600}-\\x{27BF}\\x{FE0F}\\x{200D}\\x{2190}-\\x{21FF}♪♫♬#*_~^|]", " ");
+        t = t.replaceAll("(?<=\\d),(?=\\d{3})", "");           // 1,000 → 1000
+        if (thai) {
+            t = t.replaceAll("(\\d{1,2}):00(?!\\d)", "$1 นาฬิกา");
+            t = t.replaceAll("(\\d{1,2}):(\\d{2})(?!\\d)", "$1 นาฬิกา $2 นาที");
+            t = t.replaceAll("฿\\s*([\\d.]+)", "$1 บาท").replace("฿", " บาท ");
+            t = t.replaceAll("(\\d)\\s*%", "$1 เปอร์เซ็นต์").replace("%", " เปอร์เซ็นต์ ");
+            t = t.replaceAll("(\\d)\\s*\\+\\s*(\\d)", "$1 บวก $2");
+            t = t.replaceAll("(\\d)\\s*[xX×]\\s*(\\d)", "$1 คูณ $2");
+            t = t.replace("&", " และ ").replace("@", " แอท ");
+        } else {
+            t = t.replace("&", " and ").replace("%", " percent ").replace("@", " at ");
+        }
+        t = t.replaceAll("([!?])[!?]+", "$1").replaceAll("\\.{4,}", "...");
+        return t.replaceAll("\\s+", " ").trim();
+    }
+
     // ---------- สร้างเสียง ----------
     private static final class Wav {
         int sampleRate, channels;
@@ -121,7 +177,7 @@ final class SrtSpeech {
 
     static int failedLines = 0;
 
-    static void generate(TextToSpeech tts, File cacheDir, List<Cue> cues, boolean timed, float baseRate,
+    static void generate(TextToSpeech tts, File cacheDir, List<Cue> cues, boolean timed, float baseRate, float basePitch,
                          OutputStream out, Converter.Listener listener) throws IOException {
         long lame = 0;
         int sr = 0;
@@ -137,7 +193,9 @@ final class SrtSpeech {
                 String text = cue.text.length() > maxLen ? cue.text.substring(0, maxLen) : cue.text;
                 File wavFile = new File(cacheDir, "tts_line.wav");
 
-                Wav w = synth(tts, text, wavFile, baseRate);
+                float lineRate = baseRate * cue.rateMul, linePitch = basePitch * cue.pitchMul;
+                Wav w = synth(tts, text, wavFile, lineRate, linePitch);
+                if (w == null) w = synth(tts, text, wavFile, lineRate, linePitch); // ลองใหม่อีกครั้ง
                 if (w == null) { failedLines++; continue; }
 
                 // ถ้าพูดไม่ทันก่อนบรรทัดถัดไป → พูดใหม่ให้เร็วขึ้น (สูงสุด 1.8 เท่า)
@@ -145,8 +203,8 @@ final class SrtSpeech {
                     long avail = (i + 1 < cues.size() ? cues.get(i + 1).startMs : cue.endMs) - cue.startMs;
                     long durMs = (long) w.samples.length * 1000L / w.sampleRate / Math.max(1, w.channels);
                     if (avail > 300 && durMs > avail * 1.1) {
-                        float rate = Math.min(baseRate * 1.8f, baseRate * durMs / (float) avail);
-                        Wav faster = synth(tts, text, wavFile, rate);
+                        float rate = Math.min(lineRate * 1.8f, lineRate * durMs / (float) avail);
+                        Wav faster = synth(tts, text, wavFile, rate, linePitch);
                         if (faster != null) w = faster;
                     }
                 }
@@ -194,11 +252,12 @@ final class SrtSpeech {
         if (w > 0) out.write(mp3, 0, w);
     }
 
-    private static Wav synth(TextToSpeech tts, String text, File f, float rate) throws IOException {
+    private static Wav synth(TextToSpeech tts, String text, File f, float rate, float pitch) throws IOException {
         final CountDownLatch latch = new CountDownLatch(1);
         final boolean[] ok = {false};
         final String id = "u" + System.nanoTime();
         tts.setSpeechRate(rate);
+        tts.setPitch(pitch);
         tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
             @Override public void onStart(String utteranceId) {}
             @Override public void onDone(String utteranceId) {

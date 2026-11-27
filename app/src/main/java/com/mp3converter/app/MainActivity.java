@@ -25,7 +25,13 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
+import android.widget.ArrayAdapter;
 import android.widget.CheckBox;
+import android.widget.EditText;
+import android.widget.Spinner;
+import android.speech.tts.Voice;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.RadioButton;
@@ -63,8 +69,13 @@ public class MainActivity extends Activity {
     private volatile boolean working = false;
     private final List<Uri> pending = new ArrayList<>();
     private Button srtButton;
-    private RadioGroup langGroup, speedGroup;
-    private CheckBox timedCheck;
+    private RadioGroup langGroup, speedGroup, pitchGroup;
+    private CheckBox timedCheck, emotionCheck;
+    private Spinner voiceSpinner;
+    private EditText dictEdit;
+    private final List<Voice> voiceList = new ArrayList<>();
+    private static final String PREF_VOICE = "voice";
+    private static final String PREF_DICT = "dict";
     private Uri pendingSrt;
     private TextToSpeech tts;
     private boolean ttsReady = false;
@@ -77,6 +88,7 @@ public class MainActivity extends Activity {
         prefs = getSharedPreferences("settings", MODE_PRIVATE);
         buildUi();
         updateFolderUi();
+        ensureTts(null);
         handleShareIntent(getIntent());
     }
 
@@ -251,7 +263,55 @@ public class MainActivity extends Activity {
             langGroup.addView(rb);
         }
         langGroup.check(1000);
+        langGroup.setOnCheckedChangeListener((g, id) -> refreshVoices());
         scard.addView(langGroup);
+
+        TextView vLabel = new TextView(this);
+        vLabel.setText("เสียงผู้อ่าน");
+        vLabel.setTextSize(14);
+        vLabel.setTypeface(Typeface.DEFAULT_BOLD);
+        vLabel.setTextColor(0xFF334155);
+        vLabel.setPadding(0, dp(8), 0, 0);
+        scard.addView(vLabel);
+
+        voiceSpinner = new Spinner(this);
+        voiceSpinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(android.widget.AdapterView<?> parent, View view, int pos, long id) {
+                Voice v = pos > 0 && pos - 1 < voiceList.size() ? voiceList.get(pos - 1) : null;
+                prefs.edit().putString(PREF_VOICE, v == null ? "" : v.getName()).apply();
+            }
+            @Override public void onNothingSelected(android.widget.AdapterView<?> parent) {}
+        });
+        scard.addView(voiceSpinner);
+
+        TextView pLabel = new TextView(this);
+        pLabel.setText("โทนเสียง");
+        pLabel.setTextSize(14);
+        pLabel.setTypeface(Typeface.DEFAULT_BOLD);
+        pLabel.setTextColor(0xFF334155);
+        pLabel.setPadding(0, dp(8), 0, 0);
+        scard.addView(pLabel);
+
+        pitchGroup = new RadioGroup(this);
+        pitchGroup.setOrientation(RadioGroup.HORIZONTAL);
+        String[] pitches = {"ทุ้ม", "ปกติ", "สดใส"};
+        for (int i = 0; i < pitches.length; i++) {
+            RadioButton rb = new RadioButton(this);
+            rb.setId(3000 + i);
+            rb.setText(pitches[i]);
+            rb.setLayoutParams(new RadioGroup.LayoutParams(0, RadioGroup.LayoutParams.WRAP_CONTENT, 1f));
+            pitchGroup.addView(rb);
+        }
+        pitchGroup.check(3001);
+        scard.addView(pitchGroup);
+
+        TextView spLabel = new TextView(this);
+        spLabel.setText("ความเร็ว");
+        spLabel.setTextSize(14);
+        spLabel.setTypeface(Typeface.DEFAULT_BOLD);
+        spLabel.setTextColor(0xFF334155);
+        spLabel.setPadding(0, dp(8), 0, 0);
+        scard.addView(spLabel);
 
         speedGroup = new RadioGroup(this);
         speedGroup.setOrientation(RadioGroup.HORIZONTAL);
@@ -271,6 +331,46 @@ public class MainActivity extends Activity {
         timedCheck.setTextSize(14);
         timedCheck.setChecked(true);
         scard.addView(timedCheck);
+
+        emotionCheck = new CheckBox(this);
+        emotionCheck.setText("ใส่อารมณ์ (คำถามเสียงสูงขึ้น ตกใจ/ตื่นเต้นเร็วขึ้น ... พูดช้าลง)");
+        emotionCheck.setTextSize(14);
+        emotionCheck.setChecked(true);
+        scard.addView(emotionCheck);
+
+        TextView dLabel = new TextView(this);
+        dLabel.setText("แก้คำอ่าน (บรรทัดละคำ: คำที่อ่านผิด=อ่านว่า)");
+        dLabel.setTextSize(14);
+        dLabel.setTypeface(Typeface.DEFAULT_BOLD);
+        dLabel.setTextColor(0xFF334155);
+        dLabel.setPadding(0, dp(8), 0, dp(4));
+        scard.addView(dLabel);
+
+        dictEdit = new EditText(this);
+        dictEdit.setHint("เช่น\nAI=เอไอ\nTikTok=ติ๊กต็อก\nกทม.=กรุงเทพมหานคร");
+        dictEdit.setTextSize(15);
+        dictEdit.setMinLines(3);
+        dictEdit.setGravity(Gravity.TOP | Gravity.START);
+        dictEdit.setBackground(rounded(0xFFF1F5F9, 10));
+        dictEdit.setPadding(dp(12), dp(10), dp(12), dp(10));
+        dictEdit.setText(prefs.getString(PREF_DICT, ""));
+        dictEdit.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence c, int a, int b, int d) {}
+            @Override public void onTextChanged(CharSequence c, int a, int b, int d) {}
+            @Override public void afterTextChanged(Editable e) { prefs.edit().putString(PREF_DICT, e.toString()).apply(); }
+        });
+        scard.addView(dictEdit);
+
+        Button sampleButton = new Button(this);
+        sampleButton.setText("▶ ฟังตัวอย่างเสียง");
+        sampleButton.setAllCaps(false);
+        sampleButton.setTextColor(0xFF0369A1);
+        sampleButton.setBackground(rounded(0xFFE0F2FE, 12));
+        LinearLayout.LayoutParams smp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(48));
+        smp.topMargin = dp(10);
+        sampleButton.setLayoutParams(smp);
+        sampleButton.setOnClickListener(v -> playSample());
+        scard.addView(sampleButton);
 
         srtButton = new Button(this);
         srtButton.setText("เลือกไฟล์ SRT");
@@ -598,33 +698,118 @@ public class MainActivity extends Activity {
         final Uri src = pendingSrt;
         pendingSrt = null;
         if (src == null || working) return;
-        if (tts != null && ttsReady) { runSrt(src); return; }
-        statusText.setText("กำลังเตรียมเสียงอ่าน...");
-        tts = new TextToSpeech(this, status -> {
-            if (status == TextToSpeech.SUCCESS) {
-                ttsReady = true;
-                runSrt(src);
-            } else {
-                tts = null;
-                statusText.setText("เครื่องนี้ไม่มีระบบอ่านออกเสียง\nลองติดตั้ง \"Speech Services by Google\" จาก Play Store");
-            }
-        });
+        ensureTts(() -> runSrt(src));
     }
 
-    private void runSrt(Uri src) {
-        boolean thai = langGroup.getCheckedRadioButtonId() == 1000;
-        Locale locale = thai ? new Locale("th", "TH") : Locale.US;
-        int lang = tts.setLanguage(locale);
+    private final List<Runnable> ttsWaiting = new ArrayList<>();
+
+    private void ensureTts(Runnable then) {
+        if (tts != null && ttsReady) { if (then != null) then.run(); return; }
+        if (then != null) ttsWaiting.add(then);
+        if (tts != null) return; // กำลังเตรียมอยู่
+        tts = new TextToSpeech(this, status -> runOnUiThread(() -> {
+            if (status == TextToSpeech.SUCCESS) {
+                ttsReady = true;
+                refreshVoices();
+                List<Runnable> run = new ArrayList<>(ttsWaiting);
+                ttsWaiting.clear();
+                for (Runnable r : run) r.run();
+            } else {
+                tts = null;
+                ttsWaiting.clear();
+                statusText.setText("เครื่องนี้ไม่มีระบบอ่านออกเสียง\nลองติดตั้ง \"Speech Services by Google\" จาก Play Store");
+            }
+        }));
+    }
+
+    private boolean isThai() { return langGroup.getCheckedRadioButtonId() == 1000; }
+
+    /** เติมรายชื่อเสียงของภาษาที่เลือก เรียงเสียงคุณภาพสูงไว้ก่อน */
+    private void refreshVoices() {
+        if (tts == null || !ttsReady || voiceSpinner == null) return;
+        voiceList.clear();
+        String lang = isThai() ? "th" : "en";
+        try {
+            java.util.Set<Voice> all = tts.getVoices();
+            if (all != null) for (Voice v : all) {
+                if (v.getLocale() == null || !lang.equals(v.getLocale().getLanguage())) continue;
+                if (v.getFeatures() != null && v.getFeatures().contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED)) continue;
+                if (!isThai() && !"US".equals(v.getLocale().getCountry()) && !"GB".equals(v.getLocale().getCountry())) continue;
+                voiceList.add(v);
+            }
+        } catch (Exception ignored) {}
+        java.util.Collections.sort(voiceList, (a, b) -> {
+            if (a.getQuality() != b.getQuality()) return b.getQuality() - a.getQuality();
+            return a.getName().compareTo(b.getName());
+        });
+        List<String> labels = new ArrayList<>();
+        labels.add("เสียงเริ่มต้นของเครื่อง");
+        String saved = prefs.getString(PREF_VOICE, "");
+        int sel = 0;
+        for (int i = 0; i < voiceList.size(); i++) {
+            Voice v = voiceList.get(i);
+            String q = v.getQuality() >= Voice.QUALITY_VERY_HIGH ? "คุณภาพสูงมาก"
+                    : v.getQuality() >= Voice.QUALITY_HIGH ? "คุณภาพสูง" : "ปกติ";
+            labels.add("เสียงที่ " + (i + 1) + " · " + q + (v.isNetworkConnectionRequired() ? " · ต้องใช้เน็ต" : " · ไม่ต้องใช้เน็ต"));
+            if (v.getName().equals(saved)) sel = i + 1;
+        }
+        ArrayAdapter<String> ad = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, labels);
+        ad.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        voiceSpinner.setAdapter(ad);
+        voiceSpinner.setSelection(sel);
+    }
+
+    /** ตั้งภาษาและเสียงตามที่เลือก คืนค่า false ถ้าเครื่องไม่มีเสียงภาษานั้น */
+    private boolean applyVoiceSettings() {
+        boolean thai = isThai();
+        int lang = tts.setLanguage(thai ? new Locale("th", "TH") : Locale.US);
         if (lang == TextToSpeech.LANG_MISSING_DATA || lang == TextToSpeech.LANG_NOT_SUPPORTED) {
             statusText.setText("เครื่องยังไม่มีเสียงอ่าน" + (thai ? "ภาษาไทย" : "ภาษาอังกฤษ")
                     + "\nกำลังเปิดหน้าดาวน์โหลดเสียง ให้โหลดแล้วลองใหม่");
             try {
                 startActivity(new Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA));
             } catch (ActivityNotFoundException ignored) {}
-            return;
+            return false;
         }
+        int pos = voiceSpinner.getSelectedItemPosition();
+        if (pos > 0 && pos - 1 < voiceList.size()) {
+            try { tts.setVoice(voiceList.get(pos - 1)); } catch (Exception ignored) {}
+        }
+        return true;
+    }
+
+    private float selectedRate() {
         int sp = speedGroup.getCheckedRadioButtonId();
-        final float rate = sp == 2000 ? 0.85f : sp == 2002 ? 1.25f : 1.0f;
+        return sp == 2000 ? 0.85f : sp == 2002 ? 1.25f : 1.0f;
+    }
+
+    private float selectedPitch() {
+        int p = pitchGroup.getCheckedRadioButtonId();
+        return p == 3000 ? 0.88f : p == 3002 ? 1.12f : 1.0f;
+    }
+
+    private void playSample() {
+        ensureTts(() -> {
+            if (!applyVoiceSettings()) return;
+            SrtSpeech.Cue c = new SrtSpeech.Cue();
+            c.text = isThai() ? "สวัสดีครับ วันนี้มีเรื่องสนุกๆ มาเล่าให้ฟัง รู้ไหมว่าเกิดอะไรขึ้น? โอ้โห! ไม่น่าเชื่อเลย"
+                    : "Hello everyone! Do you know what happened today? Wow, I can't believe it!";
+            if (emotionCheck.isChecked()) SrtSpeech.applyEmotion(c, isThai());
+            String text = SrtSpeech.normalize(c.text, isThai(), SrtSpeech.parseDictionary(dictEdit.getText().toString()));
+            tts.setSpeechRate(selectedRate());
+            tts.setPitch(selectedPitch());
+            tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "sample");
+        });
+    }
+
+    private void runSrt(Uri src) {
+        if (!applyVoiceSettings()) return;
+        tts.stop();
+        final boolean thai = isThai();
+        final float rate = selectedRate();
+        final float pitch = selectedPitch();
+        final boolean emotion = emotionCheck.isChecked();
+        final List<String[]> dict = SrtSpeech.parseDictionary(dictEdit.getText().toString());
         final boolean timed = timedCheck.isChecked();
         final String name = baseName(src) + "_เสียงอ่าน.mp3";
 
@@ -641,9 +826,17 @@ public class MainActivity extends Activity {
                     if (in == null) throw new Exception("เปิดไฟล์ไม่ได้");
                     cues = SrtSpeech.parse(SrtSpeech.readText(in));
                 }
+                for (SrtSpeech.Cue c : cues) {
+                    if (emotion) SrtSpeech.applyEmotion(c, thai);
+                    c.text = SrtSpeech.normalize(c.text, thai, dict);
+                }
+                List<SrtSpeech.Cue> keep = new ArrayList<>();
+                for (SrtSpeech.Cue c : cues) if (!c.text.isEmpty()) keep.add(c);
+                cues = keep;
                 if (cues.isEmpty()) throw new Exception("ไม่พบข้อความในไฟล์นี้ (ต้องเป็นไฟล์ซับ .srt)");
                 final int total = cues.size();
-                Uri result = saveMp3(name, os -> SrtSpeech.generate(tts, getCacheDir(), cues, timed, rate, os,
+                final List<SrtSpeech.Cue> finalCues = cues;
+                Uri result = saveMp3(name, os -> SrtSpeech.generate(tts, getCacheDir(), finalCues, timed, rate, pitch, os,
                         pct -> runOnUiThread(() -> {
                             progressBar.setProgress(pct);
                             statusText.setText("กำลังสร้างเสียงอ่าน: " + name + "\nบรรทัด "
