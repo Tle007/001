@@ -440,7 +440,7 @@ public class MainActivity extends Activity {
             for (int i = 0; i < queue.size(); i++) {
                 if (Converter.cancelled) break;
                 final Uri src = queue.get(i);
-                final String name = baseName(src) + ".mp3";
+                final String name = new java.text.SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(new java.util.Date()) + ".mp3";
                 final String head = (queue.size() > 1 ? "ไฟล์ " + (i + 1) + "/" + queue.size() + " · " : "") + name;
                 runOnUiThread(() -> { statusText.setText("กำลังแปลง: " + head + "\n0%"); progressBar.setProgress(0); });
                 try {
