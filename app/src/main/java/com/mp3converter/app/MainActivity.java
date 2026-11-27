@@ -6,6 +6,7 @@ import android.content.ActivityNotFoundException;
 import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.graphics.Color;
@@ -16,6 +17,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.provider.DocumentsContract;
 import android.provider.MediaStore;
 import android.provider.OpenableColumns;
 import android.view.Gravity;
@@ -41,12 +43,16 @@ public class MainActivity extends Activity {
 
     private static final int REQ_PICK = 1;
     private static final int REQ_PERM = 2;
+    private static final int REQ_TREE = 3;
+    private static final String PREF_TREE = "tree_uri";
     private static final String FOLDER = "MP3 Converter";
     private static final int PURPLE = 0xFF7C3AED;
 
     private RadioGroup qualityGroup;
     private Button pickButton, cancelButton;
-    private TextView statusText;
+    private TextView statusText, folderText;
+    private Button resetFolderButton;
+    private SharedPreferences prefs;
     private ProgressBar progressBar;
     private LinearLayout resultList;
     private volatile boolean working = false;
@@ -55,7 +61,9 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        prefs = getSharedPreferences("settings", MODE_PRIVATE);
         buildUi();
+        updateFolderUi();
         handleShareIntent(getIntent());
     }
 
@@ -93,7 +101,7 @@ public class MainActivity extends Activity {
         root.addView(title);
 
         TextView sub = new TextView(this);
-        sub.setText("เลือกวิดีโอ แอปจะดึงเสียงออกมาเป็นไฟล์ MP3 ให้ (ไม่ต้องใช้เน็ต)\nไฟล์จะอยู่ในโฟลเดอร์ Music/" + FOLDER);
+        sub.setText("เลือกวิดีโอ แอปจะดึงเสียงออกมาเป็นไฟล์ MP3 ให้ (ไม่ต้องใช้เน็ต)");
         sub.setTextSize(14);
         sub.setTextColor(0xFF64748B);
         sub.setPadding(0, dp(4), 0, dp(16));
@@ -127,6 +135,61 @@ public class MainActivity extends Activity {
         }
         qualityGroup.check(192);
         card.addView(qualityGroup);
+
+        // การ์ดที่เก็บไฟล์
+        LinearLayout fcard = new LinearLayout(this);
+        fcard.setOrientation(LinearLayout.VERTICAL);
+        fcard.setPadding(dp(16), dp(14), dp(16), dp(14));
+        fcard.setBackground(rounded(Color.WHITE, 16));
+        LinearLayout.LayoutParams fcp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        fcp.topMargin = dp(12);
+        fcard.setLayoutParams(fcp);
+        root.addView(fcard);
+
+        TextView fLabel = new TextView(this);
+        fLabel.setText("ที่เก็บไฟล์ MP3");
+        fLabel.setTextSize(15);
+        fLabel.setTypeface(Typeface.DEFAULT_BOLD);
+        fLabel.setTextColor(0xFF334155);
+        fcard.addView(fLabel);
+
+        folderText = new TextView(this);
+        folderText.setTextSize(15);
+        folderText.setTextColor(PURPLE);
+        folderText.setPadding(0, dp(4), 0, dp(8));
+        fcard.addView(folderText);
+
+        LinearLayout frow = new LinearLayout(this);
+        frow.setOrientation(LinearLayout.HORIZONTAL);
+        fcard.addView(frow);
+
+        Button changeFolder = new Button(this);
+        changeFolder.setText("เปลี่ยนที่เก็บ");
+        changeFolder.setAllCaps(false);
+        changeFolder.setTextColor(PURPLE);
+        changeFolder.setBackground(rounded(0xFFEDE9FE, 12));
+        changeFolder.setLayoutParams(new LinearLayout.LayoutParams(0, dp(46), 1f));
+        changeFolder.setOnClickListener(v -> chooseFolder());
+        frow.addView(changeFolder);
+
+        resetFolderButton = new Button(this);
+        resetFolderButton.setText("ใช้ที่เดิม");
+        resetFolderButton.setAllCaps(false);
+        resetFolderButton.setTextColor(0xFF475569);
+        resetFolderButton.setBackground(rounded(0xFFF1F5F9, 12));
+        LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(0, dp(46), 1f);
+        rlp.leftMargin = dp(8);
+        resetFolderButton.setLayoutParams(rlp);
+        resetFolderButton.setOnClickListener(v -> {
+            Uri old = getTreeUri();
+            if (old != null) {
+                try { getContentResolver().releasePersistableUriPermission(old,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION); } catch (Exception ignored) {}
+            }
+            prefs.edit().remove(PREF_TREE).apply();
+            updateFolderUi();
+        });
+        frow.addView(resetFolderButton);
 
         pickButton = new Button(this);
         pickButton.setText("เลือกไฟล์วิดีโอ");
@@ -186,7 +249,7 @@ public class MainActivity extends Activity {
     // ---------- เลือกไฟล์ ----------
     private void pickFiles() {
         if (working) return;
-        if (Build.VERSION.SDK_INT < 29
+        if (Build.VERSION.SDK_INT < 29 && getTreeUri() == null
                 && checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQ_PERM);
             return;
@@ -217,6 +280,21 @@ public class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_TREE) {
+            if (resultCode == RESULT_OK && data != null && data.getData() != null) {
+                Uri tree = data.getData();
+                try {
+                    getContentResolver().takePersistableUriPermission(tree,
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                    prefs.edit().putString(PREF_TREE, tree.toString()).apply();
+                    updateFolderUi();
+                    toast("จะเก็บไฟล์ที่: " + folderLabel());
+                } catch (Exception e) {
+                    toast("ใช้โฟลเดอร์นี้ไม่ได้ ลองเลือกโฟลเดอร์อื่น");
+                }
+            }
+            return;
+        }
         if (requestCode != REQ_PICK || resultCode != RESULT_OK || data == null) return;
         List<Uri> uris = new ArrayList<>();
         if (data.getClipData() != null) {
@@ -248,7 +326,7 @@ public class MainActivity extends Activity {
         if (working) { toast("รอให้แปลงชุดเดิมเสร็จก่อน"); return; }
         pending.clear();
         pending.addAll(uris);
-        if (Build.VERSION.SDK_INT < 29
+        if (Build.VERSION.SDK_INT < 29 && getTreeUri() == null
                 && checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQ_PERM);
             return;
@@ -296,7 +374,7 @@ public class MainActivity extends Activity {
                 setBusy(false);
                 if (wasCancelled) statusText.setText("ยกเลิกแล้ว (เสร็จ " + fOk + " ไฟล์)");
                 else statusText.setText("เสร็จแล้ว ✓ " + fOk + " ไฟล์" + (fFail > 0 ? " · ไม่สำเร็จ " + fFail + " ไฟล์" : "")
-                        + "\nอยู่ในโฟลเดอร์ Music/" + FOLDER);
+                        + "\nเก็บไว้ที่: " + folderLabel());
             });
         }).start();
     }
@@ -313,7 +391,27 @@ public class MainActivity extends Activity {
     /** แปลงหนึ่งไฟล์ แล้วคืน Uri ของ MP3 ที่บันทึกไว้ */
     private Uri convertOne(Uri src, String name, int kbps, Converter.Listener listener) throws Exception {
         ContentResolver cr = getContentResolver();
-        if (Build.VERSION.SDK_INT >= 29) {
+        Uri tree = getTreeUri();
+        if (tree != null) {
+            Uri parent = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree));
+            Uri item;
+            try {
+                item = DocumentsContract.createDocument(cr, parent, "audio/mpeg", name);
+            } catch (Exception e) {
+                item = null;
+            }
+            if (item == null) throw new Exception("เขียนไฟล์ลงโฟลเดอร์ที่เลือกไม่ได้ ลองกด \"เปลี่ยนที่เก็บ\" ใหม่");
+            boolean success = false;
+            try (OutputStream os = new BufferedOutputStream(cr.openOutputStream(item), 65536)) {
+                Converter.convert(this, src, os, kbps, listener);
+                success = true;
+            } finally {
+                if (!success) {
+                    try { DocumentsContract.deleteDocument(cr, item); } catch (Exception ignored) {}
+                }
+            }
+            return item;
+        } else if (Build.VERSION.SDK_INT >= 29) {
             ContentValues v = new ContentValues();
             v.put(MediaStore.MediaColumns.DISPLAY_NAME, name);
             v.put(MediaStore.MediaColumns.MIME_TYPE, "audio/mpeg");
@@ -374,6 +472,47 @@ public class MainActivity extends Activity {
         return name.replaceAll("[\\\\/:*?\"<>|]", "_");
     }
 
+    // ---------- ที่เก็บไฟล์ ----------
+    private void chooseFolder() {
+        if (working) return;
+        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+        i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        try {
+            startActivityForResult(i, REQ_TREE);
+        } catch (ActivityNotFoundException e) {
+            toast("เครื่องนี้เปิดหน้าเลือกโฟลเดอร์ไม่ได้");
+        }
+    }
+
+    private Uri getTreeUri() {
+        String s = prefs.getString(PREF_TREE, null);
+        if (s == null) return null;
+        Uri u = Uri.parse(s);
+        // ถ้าสิทธิ์หลุด (เช่น โฟลเดอร์ถูกลบ) กลับไปใช้ที่เดิม
+        for (android.content.UriPermission p : getContentResolver().getPersistedUriPermissions()) {
+            if (p.getUri().equals(u) && p.isWritePermission()) return u;
+        }
+        return null;
+    }
+
+    private String folderLabel() {
+        Uri tree = getTreeUri();
+        if (tree == null) return "Music/" + FOLDER + " (ค่าเริ่มต้น)";
+        String id = DocumentsContract.getTreeDocumentId(tree);
+        int colon = id.indexOf(':');
+        String vol = colon >= 0 ? id.substring(0, colon) : "";
+        String path = colon >= 0 ? id.substring(colon + 1) : id;
+        if (path.isEmpty()) path = "(หน้าแรกของที่เก็บ)";
+        return "primary".equals(vol) || vol.isEmpty() ? path : "SD card/" + path;
+    }
+
+    private void updateFolderUi() {
+        if (folderText == null) return;
+        folderText.setText("📁 " + folderLabel());
+        resetFolderButton.setVisibility(getTreeUri() == null ? View.GONE : View.VISIBLE);
+    }
+
     // ---------- รายการผลลัพธ์ ----------
     private void addResult(String name, Uri uri) {
         TextView row = new TextView(this);
@@ -405,7 +544,7 @@ public class MainActivity extends Activity {
 
     private void openAudio(Uri uri) {
         if ("file".equals(uri.getScheme())) {
-            toast("ไฟล์อยู่ในโฟลเดอร์ Music/" + FOLDER);
+            toast("ไฟล์อยู่ที่: " + folderLabel());
             return;
         }
         Intent i = new Intent(Intent.ACTION_VIEW);
