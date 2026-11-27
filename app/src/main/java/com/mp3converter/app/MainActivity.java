@@ -20,10 +20,12 @@ import android.os.Environment;
 import android.provider.DocumentsContract;
 import android.provider.MediaStore;
 import android.provider.OpenableColumns;
+import android.speech.tts.TextToSpeech;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.RadioButton;
@@ -35,15 +37,18 @@ import android.widget.Toast;
 import java.io.BufferedOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 public class MainActivity extends Activity {
 
     private static final int REQ_PICK = 1;
     private static final int REQ_PERM = 2;
     private static final int REQ_TREE = 3;
+    private static final int REQ_SRT = 4;
     private static final String PREF_TREE = "tree_uri";
     private static final String FOLDER = "MP3 Converter";
     private static final int PURPLE = 0xFF7C3AED;
@@ -57,6 +62,14 @@ public class MainActivity extends Activity {
     private LinearLayout resultList;
     private volatile boolean working = false;
     private final List<Uri> pending = new ArrayList<>();
+    private Button srtButton;
+    private RadioGroup langGroup, speedGroup;
+    private CheckBox timedCheck;
+    private Uri pendingSrt;
+    private TextToSpeech tts;
+    private boolean ttsReady = false;
+
+    private interface StreamWriter { void write(OutputStream os) throws Exception; }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -203,6 +216,74 @@ public class MainActivity extends Activity {
         pickButton.setOnClickListener(v -> pickFiles());
         root.addView(pickButton);
 
+        // ---------- การ์ดอ่านไฟล์ SRT ----------
+        LinearLayout scard = new LinearLayout(this);
+        scard.setOrientation(LinearLayout.VERTICAL);
+        scard.setPadding(dp(16), dp(14), dp(16), dp(14));
+        scard.setBackground(rounded(Color.WHITE, 16));
+        LinearLayout.LayoutParams scp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        scp.topMargin = dp(20);
+        scard.setLayoutParams(scp);
+        root.addView(scard);
+
+        TextView sTitle = new TextView(this);
+        sTitle.setText("อ่านข้อความจากไฟล์ SRT เป็น MP3");
+        sTitle.setTextSize(17);
+        sTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        sTitle.setTextColor(0xFF0F172A);
+        scard.addView(sTitle);
+
+        TextView sSub = new TextView(this);
+        sSub.setText("ใช้เสียงอ่านของโทรศัพท์อ่านซับทีละบรรทัด แล้วรวมเป็นไฟล์ MP3");
+        sSub.setTextSize(13);
+        sSub.setTextColor(0xFF64748B);
+        sSub.setPadding(0, dp(2), 0, dp(8));
+        scard.addView(sSub);
+
+        langGroup = new RadioGroup(this);
+        langGroup.setOrientation(RadioGroup.HORIZONTAL);
+        String[] langs = {"ภาษาไทย", "English"};
+        for (int i = 0; i < langs.length; i++) {
+            RadioButton rb = new RadioButton(this);
+            rb.setId(1000 + i);
+            rb.setText(langs[i]);
+            rb.setLayoutParams(new RadioGroup.LayoutParams(0, RadioGroup.LayoutParams.WRAP_CONTENT, 1f));
+            langGroup.addView(rb);
+        }
+        langGroup.check(1000);
+        scard.addView(langGroup);
+
+        speedGroup = new RadioGroup(this);
+        speedGroup.setOrientation(RadioGroup.HORIZONTAL);
+        String[] speeds = {"พูดช้า", "ปกติ", "พูดเร็ว"};
+        for (int i = 0; i < speeds.length; i++) {
+            RadioButton rb = new RadioButton(this);
+            rb.setId(2000 + i);
+            rb.setText(speeds[i]);
+            rb.setLayoutParams(new RadioGroup.LayoutParams(0, RadioGroup.LayoutParams.WRAP_CONTENT, 1f));
+            speedGroup.addView(rb);
+        }
+        speedGroup.check(2001);
+        scard.addView(speedGroup);
+
+        timedCheck = new CheckBox(this);
+        timedCheck.setText("ให้เสียงตรงเวลาตามซับ (ถ้าพูดไม่ทันจะเร่งให้เอง)");
+        timedCheck.setTextSize(14);
+        timedCheck.setChecked(true);
+        scard.addView(timedCheck);
+
+        srtButton = new Button(this);
+        srtButton.setText("เลือกไฟล์ SRT");
+        srtButton.setTextSize(17);
+        srtButton.setAllCaps(false);
+        srtButton.setTextColor(Color.WHITE);
+        srtButton.setBackground(rounded(0xFF0EA5E9, 14));
+        LinearLayout.LayoutParams sbp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(54));
+        sbp.topMargin = dp(10);
+        srtButton.setLayoutParams(sbp);
+        srtButton.setOnClickListener(v -> pickSrt());
+        scard.addView(srtButton);
+
         statusText = new TextView(this);
         statusText.setTextSize(15);
         statusText.setTextColor(0xFF334155);
@@ -270,7 +351,7 @@ public class MainActivity extends Activity {
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
         if (requestCode == REQ_PERM) {
             if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) {
-                if (!pending.isEmpty()) startQueue(); else pickFiles();
+                if (pendingSrt != null) startSrt(); else if (!pending.isEmpty()) startQueue(); else pickFiles();
             } else {
                 toast("ต้องอนุญาตให้บันทึกไฟล์ก่อน");
             }
@@ -292,6 +373,18 @@ public class MainActivity extends Activity {
                 } catch (Exception e) {
                     toast("ใช้โฟลเดอร์นี้ไม่ได้ ลองเลือกโฟลเดอร์อื่น");
                 }
+            }
+            return;
+        }
+        if (requestCode == REQ_SRT) {
+            if (resultCode == RESULT_OK && data != null && data.getData() != null) {
+                pendingSrt = data.getData();
+                if (Build.VERSION.SDK_INT < 29 && getTreeUri() == null
+                        && checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                    requestPermissions(new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQ_PERM);
+                    return;
+                }
+                startSrt();
             }
             return;
         }
@@ -382,6 +475,8 @@ public class MainActivity extends Activity {
     private void setBusy(boolean busy) {
         pickButton.setEnabled(!busy);
         pickButton.setAlpha(busy ? 0.5f : 1f);
+        srtButton.setEnabled(!busy);
+        srtButton.setAlpha(busy ? 0.5f : 1f);
         progressBar.setVisibility(busy ? View.VISIBLE : View.GONE);
         cancelButton.setVisibility(busy ? View.VISIBLE : View.GONE);
         if (busy) getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
@@ -390,6 +485,11 @@ public class MainActivity extends Activity {
 
     /** แปลงหนึ่งไฟล์ แล้วคืน Uri ของ MP3 ที่บันทึกไว้ */
     private Uri convertOne(Uri src, String name, int kbps, Converter.Listener listener) throws Exception {
+        return saveMp3(name, os -> Converter.convert(this, src, os, kbps, listener));
+    }
+
+    /** สร้างไฟล์ MP3 ในที่เก็บที่เลือก แล้วให้ writer เขียนข้อมูลลงไป */
+    private Uri saveMp3(String name, StreamWriter writer) throws Exception {
         ContentResolver cr = getContentResolver();
         Uri tree = getTreeUri();
         if (tree != null) {
@@ -403,7 +503,7 @@ public class MainActivity extends Activity {
             if (item == null) throw new Exception("เขียนไฟล์ลงโฟลเดอร์ที่เลือกไม่ได้ ลองกด \"เปลี่ยนที่เก็บ\" ใหม่");
             boolean success = false;
             try (OutputStream os = new BufferedOutputStream(cr.openOutputStream(item), 65536)) {
-                Converter.convert(this, src, os, kbps, listener);
+                writer.write(os);
                 success = true;
             } finally {
                 if (!success) {
@@ -421,7 +521,7 @@ public class MainActivity extends Activity {
             if (item == null) throw new Exception("สร้างไฟล์ปลายทางไม่ได้");
             boolean success = false;
             try (OutputStream os = new BufferedOutputStream(cr.openOutputStream(item), 65536)) {
-                Converter.convert(this, src, os, kbps, listener);
+                writer.write(os);
                 success = true;
             } finally {
                 if (success) {
@@ -439,7 +539,7 @@ public class MainActivity extends Activity {
             File f = uniqueFile(dir, name);
             boolean success = false;
             try (OutputStream os = new BufferedOutputStream(new FileOutputStream(f), 65536)) {
-                Converter.convert(this, src, os, kbps, listener);
+                writer.write(os);
                 success = true;
             } finally {
                 if (!success) //noinspection ResultOfMethodCallIgnored
@@ -470,6 +570,91 @@ public class MainActivity extends Activity {
         int dot = name.lastIndexOf('.');
         if (dot > 0) name = name.substring(0, dot);
         return name.replaceAll("[\\\\/:*?\"<>|]", "_");
+    }
+
+    // ---------- อ่าน SRT เป็นเสียง ----------
+    private void pickSrt() {
+        if (working) return;
+        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("*/*");
+        try {
+            startActivityForResult(i, REQ_SRT);
+        } catch (ActivityNotFoundException e) {
+            toast("เปิดหน้าเลือกไฟล์ไม่ได้");
+        }
+    }
+
+    private void startSrt() {
+        final Uri src = pendingSrt;
+        pendingSrt = null;
+        if (src == null || working) return;
+        if (tts != null && ttsReady) { runSrt(src); return; }
+        statusText.setText("กำลังเตรียมเสียงอ่าน...");
+        tts = new TextToSpeech(this, status -> {
+            if (status == TextToSpeech.SUCCESS) {
+                ttsReady = true;
+                runSrt(src);
+            } else {
+                tts = null;
+                statusText.setText("เครื่องนี้ไม่มีระบบอ่านออกเสียง\nลองติดตั้ง \"Speech Services by Google\" จาก Play Store");
+            }
+        });
+    }
+
+    private void runSrt(Uri src) {
+        boolean thai = langGroup.getCheckedRadioButtonId() == 1000;
+        Locale locale = thai ? new Locale("th", "TH") : Locale.US;
+        int lang = tts.setLanguage(locale);
+        if (lang == TextToSpeech.LANG_MISSING_DATA || lang == TextToSpeech.LANG_NOT_SUPPORTED) {
+            statusText.setText("เครื่องยังไม่มีเสียงอ่าน" + (thai ? "ภาษาไทย" : "ภาษาอังกฤษ")
+                    + "\nกำลังเปิดหน้าดาวน์โหลดเสียง ให้โหลดแล้วลองใหม่");
+            try {
+                startActivity(new Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA));
+            } catch (ActivityNotFoundException ignored) {}
+            return;
+        }
+        int sp = speedGroup.getCheckedRadioButtonId();
+        final float rate = sp == 2000 ? 0.85f : sp == 2002 ? 1.25f : 1.0f;
+        final boolean timed = timedCheck.isChecked();
+        final String name = baseName(src) + "_เสียงอ่าน.mp3";
+
+        working = true;
+        Converter.cancelled = false;
+        setBusy(true);
+        progressBar.setProgress(0);
+        statusText.setText("กำลังอ่านไฟล์ SRT...");
+
+        new Thread(() -> {
+            try {
+                List<SrtSpeech.Cue> cues;
+                try (InputStream in = getContentResolver().openInputStream(src)) {
+                    if (in == null) throw new Exception("เปิดไฟล์ไม่ได้");
+                    cues = SrtSpeech.parse(SrtSpeech.readText(in));
+                }
+                if (cues.isEmpty()) throw new Exception("ไม่พบข้อความในไฟล์นี้ (ต้องเป็นไฟล์ซับ .srt)");
+                final int total = cues.size();
+                Uri result = saveMp3(name, os -> SrtSpeech.generate(tts, getCacheDir(), cues, timed, rate, os,
+                        pct -> runOnUiThread(() -> {
+                            progressBar.setProgress(pct);
+                            statusText.setText("กำลังสร้างเสียงอ่าน: " + name + "\nบรรทัด "
+                                    + Math.max(1, pct * total / 100) + "/" + total + " · " + pct + "%");
+                        })));
+                final int failed = SrtSpeech.failedLines;
+                runOnUiThread(() -> {
+                    addResult(name, result);
+                    statusText.setText("เสร็จแล้ว ✓ " + name + (failed > 0 ? "\n(อ่านไม่ได้ " + failed + " บรรทัด)" : "")
+                            + "\nเก็บไว้ที่: " + folderLabel());
+                });
+            } catch (Converter.CancelledException e) {
+                runOnUiThread(() -> statusText.setText("ยกเลิกแล้ว"));
+            } catch (Exception e) {
+                final String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+                runOnUiThread(() -> { addError(name, msg); statusText.setText("ไม่สำเร็จ"); });
+            } finally {
+                runOnUiThread(() -> { working = false; setBusy(false); });
+            }
+        }).start();
     }
 
     // ---------- ที่เก็บไฟล์ ----------
@@ -562,6 +747,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         if (working) Converter.cancelled = true;
+        if (tts != null) tts.shutdown();
         super.onDestroy();
     }
 }
